@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docx Карточки</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Главное представление (список карточек) -->
+    <div class="app" id="mainView">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <i class="fas fa-file-word"></i>
+                    <h1>Docx Cards</h1>
+                </div>
+                <p class="subtitle">Управление карточками знаний</p>
+            </div>
+
+            <div class="sidebar-menu">
+                <div class="menu-item active" data-view="all">
+                    <i class="fas fa-th-large"></i>
+                    <span>Все карточки</span>
+                    <span class="badge" id="cardsCount">0</span>
+                </div>
+
+                <div class="menu-section">
+                    <h3><i class="fas fa-tags"></i> Категории</h3>
+                    <div class="categories-list" id="categoriesList">
+                        <!-- Категории будут загружены динамически -->
+                    </div>
+                    <button class="btn-add-category" id="addCategoryBtn">
+                        <i class="fas fa-plus"></i> Добавить категорию
+                    </button>
+                </div>
+
+                <div class="menu-section">
+                    <h3><i class="fas fa-cog"></i> Настройки</h3>
+                    <div class="menu-item" data-view="import">
+                        <i class="fas fa-file-import"></i>
+                        <span>Импорт из .docx</span>
+                    </div>
+                    <div class="menu-item" data-view="export">
+                        <i class="fas fa-file-export"></i>
+                        <span>Экспорт в .docx</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <button class="btn btn-primary" id="newCardBtn">
+                        <i class="fas fa-plus-circle"></i> Новая карточка
+                    </button>
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="searchInput" placeholder="Поиск по карточкам...">
+                        <button class="btn-clear-search" id="clearSearchBtn" style="display: none;">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="header-right">
+                    <div class="stats">
+                        <span id="statsCount">0 карточек</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Content Area -->
+            <div class="content-area">
+                <!-- Cards Grid View -->
+                <div class="cards-grid" id="cardsGrid">
+                    <!-- Карточки будут загружены здесь -->
+                </div>
+
+                <!-- Empty State -->
+                <div class="empty-state" id="emptyState">
+                    <div class="empty-icon">
+                        <i class="fas fa-file-alt"></i>
+                    </div>
+                    <h3>Нет карточек</h3>
+                    <p>Создайте первую карточку или импортируйте из .docx файла</p>
+                    <div class="empty-actions">
+                        <button class="btn btn-primary" id="createFirstCardBtn">
+                            <i class="fas fa-plus"></i> Создать карточку
+                        </button>
+                        <button class="btn btn-secondary" id="importFirstCardBtn">
+                            <i class="fas fa-file-import"></i> Импорт из .docx
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Представление детальной карточки -->
+    <div class="app" id="detailView" style="display: none;">
+        <!-- Sidebar с навигацией по блокам -->
+        <div class="sidebar">
+            <a href="#" class="back-link" id="backToListBtn">
+                <i class="fas fa-arrow-left"></i> Назад к списку
+            </a>
+
+            <div class="remedy-title-in-menu">
+                <h3 id="detailCardTitle">Название карточки</h3>
+            </div>
+
+            <!-- Навигационное меню по блокам карточки -->
+            <nav class="card-navigation">
+                <ul class="card-menu" id="cardMenu">
+                    <!-- Блоки будут загружены динамически -->
+                </ul>
+            </nav>
+        </div>
+
+        <!-- Основной контент карточки -->
+        <div class="main-content">
+            <div class="content-area detail-content">
+                <div class="card-detail" id="cardDetailContent">
+                    <!-- Содержимое карточки будет загружено здесь -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Card Editor Modal -->
+    <div class="modal-overlay" id="editorModal">
+        <div class="modal card-editor-modal">
+            <div class="modal-header">
+                <h2 id="modalTitle">Новая карточка</h2>
+                <button class="btn-close" id="closeEditorBtn">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="modal-body">
+                <div class="card-editor-container">
+                    <!-- Левое меню с блоками -->
+                    <div class="blocks-menu">
+                        <div class="menu-section">
+                            <h3><i class="fas fa-info-circle"></i> Основное</h3>
+                            <div class="form-group">
+                                <label for="cardTitle">Название карточки</label>
+                                <input type="text" id="cardTitle" placeholder="Введите название" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="cardCategory">Категория</label>
+                                <select id="cardCategory">
+                                    <!-- Заполнится динамически -->
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="menu-section">
+                            <h3><i class="fas fa-cube"></i> Блоки карточки</h3>
+                            <div class="blocks-list" id="blocksList">
+                                <!-- Блоки будут добавлены динамически -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Основной редактор -->
+                    <div class="main-editor">
+                        <div class="editor-header">
+                            <h3 id="currentBlockTitle">Выберите блок</h3>
+                            <div class="block-toggle">
+                                <label class="switch">
+                                    <input type="checkbox" id="blockEnabled">
+                                    <span class="slider"></span>
+                                </label>
+                                <span>Включить блок</span>
+                            </div>
+                        </div>
+
+                        <div class="editor-toolbar">
+                            <button type="button" class="editor-btn" data-command="bold" title="Жирный">
+                                <i class="fas fa-bold"></i>
+                            </button>
+                            <button type="button" class="editor-btn" data-command="italic" title="Курсив">
+                                <i class="fas fa-italic"></i>
+                            </button>
+                            <button type="button" class="editor-btn" data-command="underline" title="Подчеркивание">
+                                <i class="fas fa-underline"></i>
+                            </button>
+                            <div class="separator"></div>
+                            <button type="button" class="editor-btn" data-command="insertUnorderedList" title="Список">
+                                <i class="fas fa-list-ul"></i>
+                            </button>
+                            <button type="button" class="editor-btn" data-command="insertOrderedList" title="Нумерованный список">
+                                <i class="fas fa-list-ol"></i>
+                            </button>
+                            <div class="separator"></div>
+                            <button type="button" class="editor-btn" data-command="createLink" title="Ссылка">
+                                <i class="fas fa-link"></i>
+                            </button>
+                            <button type="button" class="editor-btn" id="addImageBtn" title="Добавить изображение">
+                                <i class="fas fa-image"></i>
+                            </button>
+                            <div class="separator"></div>
+                            <button type="button" class="editor-btn" data-command="formatBlock" data-value="h2" title="Заголовок 2">
+                                <i class="fas fa-heading"></i> H2
+                            </button>
+                            <button type="button" class="editor-btn" data-command="formatBlock" data-value="h3" title="Заголовок 3">
+                                <i class="fas fa-heading"></i> H3
+                            </button>
+                        </div>
+
+                        <div class="editor-content-container">
+                            <div
+                                contenteditable="true"
+                                id="blockContent"
+                                class="editor-content"
+                                placeholder="Введите содержание блока..."
+                                data-block-id=""
+                            ></div>
+                        </div>
+
+                        <div class="editor-footer">
+                            <div class="word-count">
+                                <span id="wordCount">0 слов</span>
+                            </div>
+                            <div class="editor-actions">
+                                <button type="button" class="btn btn-secondary" id="clearBlockBtn">
+                                    <i class="fas fa-trash"></i> Очистить
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Предпросмотр -->
+                    <div class="preview-panel">
+                        <div class="preview-header">
+                            <h3><i class="fas fa-eye"></i> Предпросмотр</h3>
+                            <button class="btn btn-sm" id="togglePreviewBtn">
+                                <i class="fas fa-expand"></i>
+                            </button>
+                        </div>
+                        <div class="preview-content" id="previewContent">
+                            <!-- Здесь будет предпросмотр -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <div class="meta-fields">
+                    <input type="text" id="cardTags" placeholder="Теги (через запятую)">
+                    <input type="text" id="cardAuthor" placeholder="Автор">
+                    <input type="text" id="cardSource" placeholder="Источник">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="cancelEditBtn">
+                        Отмена
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="saveCardBtn">
+                        <i class="fas fa-save"></i> Сохранить карточку
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div class="modal-overlay" id="importModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h2>Импорт из .docx</h2>
+                <button class="btn-close" id="closeImportBtn">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="modal-body">
+                <div class="drop-zone" id="dropZone">
+                    <i class="fas fa-file-upload fa-3x"></i>
+                    <p>Перетащите .docx файл сюда</p>
+                    <p class="drop-zone-hint">или</p>
+                    <button class="btn btn-secondary" id="browseFileBtn">
+                        Выберите файл
+                    </button>
+                    <input type="file" id="fileInput" accept=".docx,.doc" style="display: none;">
+                </div>
+
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Notification -->
+    <div class="notification" id="successNotification">
+        <i class="fas fa-check-circle"></i>
+        <span id="notificationMessage">Успешно!</span>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>

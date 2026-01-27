@@ -1,0 +1,100 @@
+# ==================== ОПЕРАЦИОННЫЕ СИСТЕМЫ ====================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ==================== РЕЛИЗЫ И СБОРКА ====================
+dist/
+out/
+release/
+release-builds/
+packages/
+*.exe
+*.dmg
+*.AppImage
+*.snap
+*.deb
+*.rpm
+*.msi
+*.app
+*.pkg
+
+# ==================== ЗАВИСИМОСТИ ====================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# ==================== ЭЛЕКТРОН ====================
+.electron/
+electron-builder.json
+electron-builder.yml
+asar
+
+# ==================== ОКРУЖЕНИЕ ====================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ==================== ЛОГИ ====================
+*.log
+logs/
+*.pid
+
+# ==================== IDE И РЕДАКТОРЫ ====================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ==================== ДОКУМЕНТЫ ====================
+*.docx
+*.doc
+*.pdf
+*.odt
+
+# ==================== ИЗОБРАЖЕНИЯ И ФАЙЛЫ ПОЛЬЗОВАТЕЛЯ ====================
+uploads/
+exports/
+user-data/
+
+# ==================== БАЗЫ ДАННЫХ И ХРАНИЛИЩА ====================
+*.db
+*.sqlite
+*.sqlite3
+storage.json
+data.json
+
+# ==================== КЭШ ====================
+.cache/
+.temp/
+
+# ==================== СБОРОЧНЫЕ ФАЙЛЫ ====================
+*.o
+*.obj
+*.out
+*.class
+
+# ==================== ВРЕМЕННЫЕ ФАЙЛЫ ====================
+tmp/
+temp/
+*.tmp
+*.temp
+
+# ==================== КОНФИГУРАЦИОННЫЕ ФАЙЛЫ ПРИЛОЖЕНИЯ ====================
+config.json
+settings.json
+user-preferences.json
