@@ -57,6 +57,8 @@ class Storage {
         return this.cards.filter(card =>
             card.title?.toLowerCase().includes(searchTerm) ||
             card.category?.toLowerCase().includes(searchTerm) ||
+            card.meta?.cirillic?.toLowerCase().includes(searchTerm) ||
+            card.meta?.base_description?.toLowerCase().includes(searchTerm) ||
             JSON.stringify(card.blocks).toLowerCase().includes(searchTerm) ||
             card.meta?.tags?.some(tag => tag.toLowerCase().includes(searchTerm))
         );
@@ -68,6 +70,15 @@ class Storage {
 
     async addCard(card) {
         try {
+            // Генерируем ID для новой карточки
+            if (!card.id || card.id.startsWith('new_')) {
+                card.id = 'card_' + Date.now();
+            }
+
+            card.meta = card.meta || {};
+            card.meta.created = card.meta.created || new Date().toISOString();
+            card.meta.updated = new Date().toISOString();
+
             this.cards.unshift(card);
             await this.saveCards();
             return card;
@@ -81,15 +92,23 @@ class Storage {
         try {
             const index = this.cards.findIndex(card => card.id === id);
             if (index !== -1) {
-                this.cards[index] = {
+                // Объединяем существующую карточку с обновлениями
+                const updatedCard = {
                     ...this.cards[index],
                     ...updates,
                     meta: {
                         ...this.cards[index].meta,
-                        ...updates.meta,
+                        ...(updates.meta || {}),
                         updated: new Date().toISOString()
                     }
                 };
+
+                // Убедимся, что blocks не перезаписан полностью, если не указан в updates
+                if (!updates.blocks) {
+                    updatedCard.blocks = this.cards[index].blocks;
+                }
+
+                this.cards[index] = updatedCard;
                 await this.saveCards();
                 return this.cards[index];
             }
@@ -131,9 +150,9 @@ class Storage {
             category: 'Общее',
             blocks: blocks,
             meta: {
+                short_name: '',
                 cirillic: '',
                 base_description: '',
-                short_name: '',
                 slug: '',
                 image: '',
                 miasm: '',
@@ -170,6 +189,10 @@ class DocxCardsApp {
         this.currentView = 'all';
         this.searchQuery = '';
         this.importData = null;
+        this.activeFilters = {
+            miasms: [],
+            groups: []
+        };
 
         this.init();
     }
@@ -180,8 +203,8 @@ class DocxCardsApp {
         this.loadData();
         this.renderCategories();
         this.renderBlocksMenu();
+        this.renderFilters();
         this.updateStats();
-        this.showMainView();
     }
 
     cacheElements() {
@@ -204,11 +227,22 @@ class DocxCardsApp {
         this.cardMenu = document.getElementById('cardMenu');
         this.cardDetailContent = document.getElementById('cardDetailContent');
 
-        // Модальное окно редактора
+        // Модальное окно редактора - ОСНОВНЫЕ ПОЛЯ
         this.editorModal = document.getElementById('editorModal');
         this.modalTitle = document.getElementById('modalTitle');
         this.cardTitle = document.getElementById('cardTitle');
         this.cardCategory = document.getElementById('cardCategory');
+
+        // НОВЫЕ ПОЛЯ
+        this.cardShortName = document.getElementById('cardShortName');
+        this.cardCirillic = document.getElementById('cardCirillic');
+        this.cardBaseDescription = document.getElementById('cardBaseDescription');
+        this.cardSlug = document.getElementById('cardSlug');
+        this.cardImage = document.getElementById('cardImage');
+        this.cardMiasm = document.getElementById('cardMiasm');
+        this.cardGroup = document.getElementById('cardGroup');
+
+        // ПОЛЯ ИЗ FOOTER
         this.cardTags = document.getElementById('cardTags');
         this.cardAuthor = document.getElementById('cardAuthor');
         this.cardSource = document.getElementById('cardSource');
@@ -238,10 +272,6 @@ class DocxCardsApp {
         this.fileInput = document.getElementById('fileInput');
         this.browseFileBtn = document.getElementById('browseFileBtn');
         this.dropZone = document.getElementById('dropZone');
-        this.importPreview = document.getElementById('importPreview');
-        this.importPreviewContent = document.getElementById('previewContent');
-        this.confirmImportBtn = document.getElementById('confirmImportBtn');
-        this.cancelImportBtn = document.getElementById('cancelImportBtn');
         this.closeImportBtn = document.getElementById('closeImportBtn');
     }
 
@@ -252,48 +282,94 @@ class DocxCardsApp {
         });
 
         // Поиск
-        this.searchInput?.addEventListener('input', (e) => this.handleSearch(e));
-        this.clearSearchBtn?.addEventListener('click', () => this.clearSearch());
+        if (this.searchInput) {
+            this.searchInput.addEventListener('input', (e) => this.handleSearch(e));
+        }
+
+        if (this.clearSearchBtn) {
+            this.clearSearchBtn.addEventListener('click', () => this.clearSearch());
+        }
 
         // Карточки
-        this.newCardBtn?.addEventListener('click', () => this.openEditor());
-        this.createFirstCardBtn?.addEventListener('click', () => this.openEditor());
-        this.importFirstCardBtn?.addEventListener('click', () => this.openImportModal());
+        if (this.newCardBtn) {
+            this.newCardBtn.addEventListener('click', () => this.openEditor());
+        }
+
+        if (this.createFirstCardBtn) {
+            this.createFirstCardBtn.addEventListener('click', () => this.openEditor());
+        }
+
+        if (this.importFirstCardBtn) {
+            this.importFirstCardBtn.addEventListener('click', () => this.openImportModal());
+        }
 
         // Детальный просмотр
-        this.backToListBtn?.addEventListener('click', (e) => {
-            e.preventDefault();
-            this.showMainView();
-        });
+        if (this.backToListBtn) {
+            this.backToListBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.showMainView();
+            });
+        }
 
         // Редактор блоков
-        this.blockContent?.addEventListener('input', () => this.updatePreview());
-        this.blockContent?.addEventListener('blur', () => this.updatePreview());
-        this.blockEnabled?.addEventListener('change', () => this.toggleBlock());
-        this.clearBlockBtn?.addEventListener('click', () => this.clearBlock());
+        if (this.blockContent) {
+            this.blockContent.addEventListener('input', () => this.updatePreview());
+        }
+
+        if (this.blockEnabled) {
+            this.blockEnabled.addEventListener('change', () => this.toggleBlock());
+        }
+
+        if (this.clearBlockBtn) {
+            this.clearBlockBtn.addEventListener('click', () => this.clearBlock());
+        }
 
         // Кнопки форматирования
-        this.editorButtons?.forEach(btn => {
-            btn.addEventListener('click', (e) => this.handleEditorCommand(e));
-        });
+        if (this.editorButtons) {
+            this.editorButtons.forEach(btn => {
+                btn.addEventListener('click', (e) => this.handleEditorCommand(e));
+            });
+        }
 
-        this.addImageBtn?.addEventListener('click', () => this.addImage());
+        if (this.addImageBtn) {
+            this.addImageBtn.addEventListener('click', () => this.addImage());
+        }
 
         // Сохранение
-        this.saveCardBtn?.addEventListener('click', (e) => this.handleCardSubmit(e));
-        this.closeEditorBtn?.addEventListener('click', () => this.closeEditor());
-        this.cancelEditBtn?.addEventListener('click', () => this.closeEditor());
-        this.togglePreviewBtn?.addEventListener('click', () => this.togglePreview());
+        if (this.saveCardBtn) {
+            this.saveCardBtn.addEventListener('click', (e) => this.handleCardSubmit(e));
+        }
+
+        if (this.closeEditorBtn) {
+            this.closeEditorBtn.addEventListener('click', () => this.closeEditor());
+        }
+
+        if (this.cancelEditBtn) {
+            this.cancelEditBtn.addEventListener('click', () => this.closeEditor());
+        }
+
+        if (this.togglePreviewBtn) {
+            this.togglePreviewBtn.addEventListener('click', () => this.togglePreview());
+        }
 
         // Импорт
-        this.browseFileBtn?.addEventListener('click', () => this.fileInput?.click());
-        this.fileInput?.addEventListener('change', (e) => this.handleFileSelect(e));
-        this.dropZone?.addEventListener('click', () => this.fileInput?.click());
-        this.dropZone?.addEventListener('dragover', (e) => this.handleDragOver(e));
-        this.dropZone?.addEventListener('drop', (e) => this.handleDrop(e));
-        this.closeImportBtn?.addEventListener('click', () => this.closeImportModal());
-        this.cancelImportBtn?.addEventListener('click', () => this.closeImportModal());
-        this.confirmImportBtn?.addEventListener('click', () => this.confirmImport());
+        if (this.browseFileBtn) {
+            this.browseFileBtn.addEventListener('click', () => this.fileInput?.click());
+        }
+
+        if (this.fileInput) {
+            this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+        }
+
+        if (this.dropZone) {
+            this.dropZone.addEventListener('click', () => this.fileInput?.click());
+            this.dropZone.addEventListener('dragover', (e) => this.handleDragOver(e));
+            this.dropZone.addEventListener('drop', (e) => this.handleDrop(e));
+        }
+
+        if (this.closeImportBtn) {
+            this.closeImportBtn.addEventListener('click', () => this.closeImportModal());
+        }
     }
 
     async loadData() {
@@ -365,13 +441,35 @@ class DocxCardsApp {
             cards = cards.filter(card => card.category === category);
         }
 
+        // Фильтрация по миазмам
+        if (this.activeFilters?.miasms?.length > 0) {
+            cards = cards.filter(card => {
+                if (!card.meta?.miasm) return false;
+                const cardMiasms = card.meta.miasm.split(',').map(m => m.trim());
+                return this.activeFilters.miasms.some(filterMiasm =>
+                    cardMiasms.includes(filterMiasm)
+                );
+            });
+        }
+
+        // Фильтрация по группам
+        if (this.activeFilters?.groups?.length > 0) {
+            cards = cards.filter(card => {
+                if (!card.meta?.group) return false;
+                const cardGroups = card.meta.group.split(',').map(g => g.trim());
+                return this.activeFilters.groups.some(filterGroup =>
+                    cardGroups.includes(filterGroup)
+                );
+            });
+        }
+
         if (cards.length === 0) {
-            if (this.cardsGrid) this.cardsGrid.style.display = 'none';
+            this.cardsGrid.style.display = 'none';
             if (this.emptyState) {
                 this.emptyState.style.display = 'flex';
             }
         } else {
-            if (this.cardsGrid) this.cardsGrid.style.display = 'grid';
+            this.cardsGrid.style.display = 'grid';
             if (this.emptyState) {
                 this.emptyState.style.display = 'none';
             }
@@ -424,44 +522,60 @@ class DocxCardsApp {
                 return text.length > 150 ? text.substring(0, 150) + '...' : text;
             }
         }
+
+        // Если нет заполненных блоков, показываем базовое описание
+        if (card.meta?.base_description) {
+            return card.meta.base_description;
+        }
+
         return 'Нет содержимого';
     }
 
     attachCardEvents() {
+        // Клик по карточке для просмотра
         document.querySelectorAll('.card').forEach(card => {
             card.addEventListener('click', (e) => {
                 // Открываем просмотр только при клике на основную область карточки
                 if (!e.target.closest('.card-action-btn')) {
-                    this.viewCard(card.dataset.id);
+                    const cardId = card.dataset.id;
+                    this.viewCard(cardId);
                 }
             });
         });
 
+        // Кнопка просмотра
         document.querySelectorAll('.view-card').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                this.viewCard(btn.closest('.card').dataset.id);
+                const cardId = btn.closest('.card').dataset.id;
+                this.viewCard(cardId);
             });
         });
 
+        // Кнопка редактирования
         document.querySelectorAll('.edit-card').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                this.editCard(btn.closest('.card').dataset.id);
+                const cardId = btn.closest('.card').dataset.id;
+                this.editCard(cardId);
             });
         });
 
+        // Кнопка экспорта
         document.querySelectorAll('.export-card').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                this.exportCard(btn.closest('.card').dataset.id);
+                const cardId = btn.closest('.card').dataset.id;
+                this.exportCard(cardId);
             });
         });
 
+        // Кнопка удаления
         document.querySelectorAll('.delete-card').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                this.deleteCard(btn.closest('.card').dataset.id);
+                const cardId = btn.closest('.card').dataset.id;
+                this.deleteCard(cardId);
             });
         });
     }
@@ -472,42 +586,139 @@ class DocxCardsApp {
 
         const categories = this.storage.getCategories();
 
-        // Рендерим список категорий в сайдбаре
-        if (categoriesList) {
-            categoriesList.innerHTML = categories.map(category => `
-                <div class="category-item" data-category="${category}">
-                    <i class="fas fa-folder"></i>
-                    <span>${category}</span>
-                    <span class="badge">
-                        ${this.storage.getCards().filter(c => c.category === category).length}
-                    </span>
-                </div>
-            `).join('');
-
-            // Добавляем обработчики для категорий
-            document.querySelectorAll('.category-item').forEach(item => {
-                item.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const category = item.dataset.category;
-
-                    // Обновляем активные элементы
-                    document.querySelectorAll('.menu-item[data-view], .category-item').forEach(el => {
-                        el.classList.remove('active');
-                    });
-                    item.classList.add('active');
-
-                    this.currentView = category;
-                    this.renderCards();
-                });
-            });
-        }
-
         // Рендерим выпадающий список в редакторе
         if (categorySelect) {
             categorySelect.innerHTML = categories.map(category =>
                 `<option value="${category}">${category}</option>`
             ).join('');
         }
+    }
+
+    renderFilters() {
+        this.renderMiasmsFilter();
+        this.renderGroupsFilter();
+    }
+
+    renderMiasmsFilter() {
+        const miasmsFilter = document.getElementById('miasmsFilter');
+        if (!miasmsFilter) return;
+
+        // Соберем все уникальные миазмы из всех карточек
+        const allMiasms = [];
+        this.storage.cards.forEach(card => {
+            if (card.meta?.miasm) {
+                const miasms = card.meta.miasm.split(',').map(m => m.trim()).filter(m => m);
+                miasms.forEach(miasm => {
+                    if (!allMiasms.includes(miasm)) {
+                        allMiasms.push(miasm);
+                    }
+                });
+            }
+        });
+
+        allMiasms.sort();
+
+        if (allMiasms.length === 0) {
+            miasmsFilter.innerHTML = '<p class="no-filters">Нет данных</p>';
+            return;
+        }
+
+        miasmsFilter.innerHTML = allMiasms.map(miasm => `
+            <div class="filter-item" data-type="miasm" data-value="${miasm}">
+                <span class="filter-checkbox"></span>
+                <span>${miasm}</span>
+                <span class="filter-count">${this.getMiasmCount(miasm)}</span>
+            </div>
+        `).join('');
+
+        // Добавим обработчики событий
+        this.attachFilterEvents();
+    }
+
+    renderGroupsFilter() {
+        const groupsFilter = document.getElementById('groupsFilter');
+        if (!groupsFilter) return;
+
+        // Соберем все уникальные группы из всех карточек
+        const allGroups = [];
+        this.storage.cards.forEach(card => {
+            if (card.meta?.group) {
+                const groups = card.meta.group.split(',').map(g => g.trim()).filter(g => g);
+                groups.forEach(group => {
+                    if (!allGroups.includes(group)) {
+                        allGroups.push(group);
+                    }
+                });
+            }
+        });
+
+        allGroups.sort();
+
+        if (allGroups.length === 0) {
+            groupsFilter.innerHTML = '<p class="no-filters">Нет данных</p>';
+            return;
+        }
+
+        groupsFilter.innerHTML = allGroups.map(group => `
+            <div class="filter-item" data-type="group" data-value="${group}">
+                <span class="filter-checkbox"></span>
+                <span>${group}</span>
+                <span class="filter-count">${this.getGroupCount(group)}</span>
+            </div>
+        `).join('');
+
+        // Добавим обработчики событий
+        this.attachFilterEvents();
+    }
+
+    getMiasmCount(miasm) {
+        return this.storage.cards.filter(card => {
+            if (!card.meta?.miasm) return false;
+            const miasms = card.meta.miasm.split(',').map(m => m.trim());
+            return miasms.includes(miasm);
+        }).length;
+    }
+
+    getGroupCount(group) {
+        return this.storage.cards.filter(card => {
+            if (!card.meta?.group) return false;
+            const groups = card.meta.group.split(',').map(g => g.trim());
+            return groups.includes(group);
+        }).length;
+    }
+
+    attachFilterEvents() {
+        document.querySelectorAll('.filter-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                const type = item.dataset.type;
+                const value = item.dataset.value;
+
+                // Переключаем активное состояние
+                item.classList.toggle('active');
+
+                // Обновляем фильтры и рендерим карточки
+                this.updateActiveFilters();
+                this.renderCards();
+            });
+        });
+    }
+
+    updateActiveFilters() {
+        this.activeFilters = {
+            miasms: [],
+            groups: []
+        };
+
+        document.querySelectorAll('.filter-item.active').forEach(item => {
+            const type = item.dataset.type;
+            const value = item.dataset.value;
+
+            if (type === 'miasm') {
+                this.activeFilters.miasms.push(value);
+            } else if (type === 'group') {
+                this.activeFilters.groups.push(value);
+            }
+        });
     }
 
     updateStats(count = null) {
@@ -532,25 +743,25 @@ class DocxCardsApp {
         this.currentCard = card;
         this.showDetailView();
         this.renderCardDetail();
-        this.setupCardNavigation();
     }
 
     renderCardDetail() {
-        if (!this.currentCard) return;
+        if (!this.currentCard || !this.detailCardTitle || !this.cardDetailContent) return;
 
         const card = this.currentCard;
         const blockTypes = this.storage.getBlockTypes();
 
         // Обновляем заголовок в левом меню
-        if (this.detailCardTitle) {
-            this.detailCardTitle.textContent = card.title || 'Без названия';
-        }
+        this.detailCardTitle.textContent = card.title || 'Без названия';
 
         // Рендерим навигационное меню
         this.renderCardMenu(card, blockTypes);
 
         // Рендерим содержимое карточки
         this.renderCardContent(card, blockTypes);
+
+        // Настраиваем навигацию
+        this.setupCardNavigation();
     }
 
     renderCardMenu(card, blockTypes) {
@@ -558,60 +769,17 @@ class DocxCardsApp {
 
         const menuItems = [];
 
-        // Сначала добавляем основные мета-данные
-        menuItems.push(`
-            <li>
-                <a href="#card-header" class="nav-link">
-                    <i class="fas fa-info-circle"></i> Основная информация
-                </a>
-            </li>
-        `);
-
-        // Порядок отображения такой же
-        const displayOrder = [
-            'key_characteristic',
-            'description',
-            'typical_features',
-            'clinical_indications',
-            'etiology',
-            'remedy_miasms',
-            'symptoms',
-            'symptoms_by_system',
-            'application',
-            'modalities',
-            'keywords',
-            'images_block',
-            'characteristic',
-            'differential_diagnosis',
-            'antidotes',
-            'custom_blocks',
-            'delusions',
-            'personality',
-            'cultural_archetypes',
-            'sources'
-        ];
-
-        // Добавляем ВСЕ блоки из displayOrder, которые есть в карточке
-        displayOrder.forEach(blockId => {
-            const blockType = blockTypes.find(b => b.id === blockId);
-            if (!blockType) return;
-
-            const block = card.blocks[blockId];
-            if (block) {
-                const hasContent = block.content && block.content.trim();
-
-                // Показываем в меню если блок включен ИЛИ имеет содержимое
-                if (block.enabled || hasContent) {
-                    menuItems.push(`
-                        <li>
-                            <a href="#${blockId}" class="nav-link">
-                                <i class="${blockType.icon || 'fas fa-cube'}"></i>
-                                ${blockType.title}
-                                ${!hasContent ? '<span class="empty-badge">(пусто)</span>' : ''}
-                            </a>
-                        </li>
-                    `);
-                }
+        // Добавляем пункты меню только для включенных и заполненных блоков
+        blockTypes.forEach(blockType => {
+            const block = card.blocks[blockType.id];
+            if (block && block.enabled && block.content && block.content.trim()) {
+                menuItems.push(`
+                    <li>
+                        <a href="#${blockType.id}" class="nav-link">
+                            <i class="${blockType.icon}"></i> ${blockType.title}
+                        </a>
+                    </li>
+                `);
             }
         });
 
@@ -622,111 +790,69 @@ class DocxCardsApp {
         if (!this.cardDetailContent) return;
 
         let html = `
-            <!-- Заголовок карточки - ТОЧНО КАК В ОРИГИНАЛЕ -->
+            <!-- Заголовок карточки -->
             <div class="card-header">
                 <h1>${this.escapeHtml(card.title || 'Без названия')}</h1>
                 ${card.meta?.short_name ? `<p class="short_name">${this.escapeHtml(card.meta.short_name)}</p>` : ''}
                 ${card.meta?.cirillic ? `<p class="cirillic">${this.escapeHtml(card.meta.cirillic)}</p>` : ''}
-                ${card.meta?.base_description ? `<p class="cirillic base-description">${this.escapeHtml(card.meta.base_description)}</p>` : ''}
+                ${card.meta?.base_description ? `<p class="base-description">${this.escapeHtml(card.meta.base_description)}</p>` : ''}
             </div>
         `;
 
-        // Если есть изображение, добавляем его
+        // Если есть изображение
         if (card.meta?.image) {
             html += `
-                <div class="section-image-wrapper">
-                    <img src="${card.meta.image}" alt="${card.title}" class="card-main-image">
+                <div class="card-image-container">
+                    <img src="assets/images/${card.meta.image}" alt="${card.title}" class="card-main-image" onerror="this.style.display='none'">
                 </div>
             `;
         }
 
-        // Мета-информация в виде таблицы (как в оригинале)
+        // Мета-информация
         html += `
-            <div class="meta-grid">
+            <div class="card-meta-info">
                 ${card.meta?.miasm ? `
-                    <div class="meta-field">
-                        <label>Миазм:</label>
-                        <span class="meta-value">${this.escapeHtml(card.meta.miasm)}</span>
+                    <div class="meta-item">
+                        <strong>Миазм:</strong>
+                        <span>${this.escapeHtml(card.meta.miasm)}</span>
+                    </div>
+                ` : ''}
+
+                ${card.meta?.group ? `
+                    <div class="meta-item">
+                        <strong>Группа:</strong>
+                        <span>${this.escapeHtml(card.meta.group)}</span>
                     </div>
                 ` : ''}
 
                 ${card.category ? `
-                    <div class="meta-field">
-                        <label>Категория:</label>
-                        <span class="meta-value">${this.escapeHtml(card.category)}</span>
+                    <div class="meta-item">
+                        <strong>Категория:</strong>
+                        <span>${this.escapeHtml(card.category)}</span>
                     </div>
                 ` : ''}
 
                 ${card.meta?.author ? `
-                    <div class="meta-field">
-                        <label>Автор:</label>
-                        <span class="meta-value">${this.escapeHtml(card.meta.author)}</span>
-                    </div>
-                ` : ''}
-
-                ${card.meta?.source ? `
-                    <div class="meta-field">
-                        <label>Источник:</label>
-                        <span class="meta-value">${this.escapeHtml(card.meta.source)}</span>
-                    </div>
-                ` : ''}
-
-                ${card.meta?.tags && card.meta.tags.length > 0 ? `
-                    <div class="meta-field">
-                        <label>Теги:</label>
-                        <span class="meta-value">
-                            ${card.meta.tags.map(tag => `<span class="tag">${this.escapeHtml(tag)}</span>`).join('')}
-                        </span>
+                    <div class="meta-item">
+                        <strong>Автор:</strong>
+                        <span>${this.escapeHtml(card.meta.author)}</span>
                     </div>
                 ` : ''}
             </div>
         `;
 
-        // ВСЕ БЛОКИ - включаем даже если они пустые или не включены
-        // Сначала определим порядок отображения блоков
-        const displayOrder = [
-            'key_characteristic',
-            'description',
-            'typical_features',
-            'clinical_indications',
-            'etiology',
-            'remedy_miasms',
-            'symptoms',
-            'symptoms_by_system',
-            'application',
-            'modalities',
-            'keywords',
-            'images_block',
-            'characteristic',
-            'differential_diagnosis',
-            'antidotes',
-            'custom_blocks',
-            'delusions',
-            'personality',
-            'cultural_archetypes',
-            'sources'
-        ];
-
-        // Отображаем блоки в порядке displayOrder
-        displayOrder.forEach(blockId => {
-            const blockType = blockTypes.find(b => b.id === blockId);
-            if (!blockType) return;
-
-            const block = card.blocks[blockId];
-            if (block) {
-                const hasContent = block.content && block.content.trim();
-
-                // Показываем блок только если он включен или имеет содержимое
-                if (block.enabled || hasContent) {
-                    html += `
-                        <section id="${blockId}" class="section">
-                            <h2>${blockType.title}</h2>
-                            <div class="section-content">
-                                ${hasContent ? this.formatBlockContent(block.content, blockId) : '<div class="empty-content">Нет содержимого</div>'}
-                            </div>
-                        </section>
-                    `;
-                }
+        // Добавляем блоки карточки
+        blockTypes.forEach(blockType => {
+            const block = card.blocks[blockType.id];
+            if (block && block.enabled && block.content && block.content.trim()) {
+                html += `
+                    <section id="${blockType.id}" class="section">
+                        <h2>${blockType.title}</h2>
+                        <div class="section-content">
+                            ${block.content}
+                        </div>
+                    </section>
+                `;
             }
         });
 
@@ -745,50 +871,6 @@ class DocxCardsApp {
         this.cardDetailContent.innerHTML = html;
     }
 
-    formatBlockContent(content, blockId) {
-        if (!content) return '';
-
-        let formatted = content;
-
-        // Для specific_blocks делаем список в две колонки
-        if (blockId === 'typical_features' || blockId === 'symptoms' || blockId === 'keywords') {
-            // Проверяем, содержит ли контент списки
-            if (content.includes('<li>') || content.includes('<ul>')) {
-                // Добавляем класс для двухколоночного списка
-                formatted = formatted.replace('<ul>', '<ul class="section-list">');
-                formatted = formatted.replace('<ol>', '<ol class="section-list">');
-            } else {
-                // Если нет списков, пытаемся создать из простого текста
-                const lines = content.split('\n').filter(line => line.trim());
-                if (lines.length > 1) {
-                    formatted = '<ul class="section-list">' +
-                        lines.map(line => `<li>${line}</li>`).join('') +
-                        '</ul>';
-                }
-            }
-        }
-
-        // Для изображений
-        if (blockId === 'images_block' || blockId === 'personality_images') {
-            const imgTags = content.match(/<img[^>]+>/g);
-            if (imgTags && imgTags.length > 0) {
-                formatted = '<div class="images-grid">';
-                imgTags.forEach(imgTag => {
-                    formatted += `
-                        <div class="image-item">
-                            <div class="image-container">
-                                ${imgTag}
-                            </div>
-                        </div>
-                    `;
-                });
-                formatted += '</div>';
-            }
-        }
-
-        return formatted;
-    }
-
     setupCardNavigation() {
         const navLinks = document.querySelectorAll('.nav-link');
         const menuItems = document.querySelectorAll('.card-menu li');
@@ -799,13 +881,7 @@ class DocxCardsApp {
                 e.preventDefault();
 
                 const targetId = this.getAttribute('href');
-                let targetElement;
-
-                if (targetId === '#card-header') {
-                    targetElement = document.querySelector('.card-header');
-                } else {
-                    targetElement = document.querySelector(targetId);
-                }
+                const targetElement = document.querySelector(targetId);
 
                 if (targetElement) {
                     targetElement.scrollIntoView({
@@ -825,21 +901,10 @@ class DocxCardsApp {
         // Функция для подсветки активного раздела при скролле
         const highlightActiveSection = () => {
             const sections = document.querySelectorAll('.section');
-            const header = document.querySelector('.card-header');
             const scrollPos = window.scrollY + 100;
 
-            let currentActive = 'card-header';
+            let currentActive = null;
 
-            // Проверяем заголовок
-            if (header) {
-                const headerTop = header.offsetTop;
-                const headerHeight = header.offsetHeight;
-                if (scrollPos >= headerTop && scrollPos < headerTop + headerHeight) {
-                    currentActive = 'card-header';
-                }
-            }
-
-            // Проверяем все секции
             sections.forEach(section => {
                 const sectionTop = section.offsetTop;
                 const sectionHeight = section.offsetHeight;
@@ -853,8 +918,7 @@ class DocxCardsApp {
             // Обновляем активные ссылки
             navLinks.forEach(link => {
                 link.classList.remove('active');
-                const linkTarget = link.getAttribute('href').substring(1);
-                if (linkTarget === currentActive) {
+                if (link.getAttribute('href') === '#' + currentActive) {
                     link.classList.add('active');
                     link.parentElement.classList.add('active');
                 } else {
@@ -894,21 +958,40 @@ class DocxCardsApp {
     }
 
     openEditor(cardId = null) {
-        this.currentCard = cardId ? this.storage.getCardById(cardId) : this.storage.getEmptyCard();
-
-        if (cardId && this.currentCard) {
-            this.modalTitle.textContent = 'Редактировать карточку';
+        if (cardId) {
+            const card = this.storage.getCardById(cardId);
+            if (card) {
+                this.currentCard = JSON.parse(JSON.stringify(card)); // Глубокое копирование
+                this.modalTitle.textContent = 'Редактировать карточку';
+            } else {
+                this.showNotification('Карточка не найдена', 'error');
+                return;
+            }
         } else {
-            this.modalTitle.textContent = 'Новая карточка';
             this.currentCard = this.storage.getEmptyCard();
+            this.modalTitle.textContent = 'Новая карточка';
         }
 
-        // Заполняем основные поля
+        // Заполняем ВСЕ поля
         if (this.cardTitle) this.cardTitle.value = this.currentCard.title || '';
         if (this.cardCategory) this.cardCategory.value = this.currentCard.category || 'Общее';
+
+        // Новые поля
+        if (this.cardShortName) this.cardShortName.value = this.currentCard.meta?.short_name || '';
+        if (this.cardCirillic) this.cardCirillic.value = this.currentCard.meta?.cirillic || '';
+        if (this.cardBaseDescription) this.cardBaseDescription.value = this.currentCard.meta?.base_description || '';
+        if (this.cardSlug) this.cardSlug.value = this.currentCard.meta?.slug || '';
+        if (this.cardImage) this.cardImage.value = this.currentCard.meta?.image || '';
+        if (this.cardMiasm) this.cardMiasm.value = this.currentCard.meta?.miasm || '';
+        if (this.cardGroup) this.cardGroup.value = this.currentCard.meta?.group || '';
+
+        // Поля из footer
         if (this.cardTags) this.cardTags.value = this.currentCard.meta?.tags?.join(', ') || '';
         if (this.cardAuthor) this.cardAuthor.value = this.currentCard.meta?.author || '';
         if (this.cardSource) this.cardSource.value = this.currentCard.meta?.source || '';
+
+        // Сбрасываем текущий блок
+        this.currentBlockId = null;
 
         // Обновляем статусы блоков
         this.updateBlocksStatus();
@@ -922,12 +1005,16 @@ class DocxCardsApp {
         if (this.editorModal) {
             this.editorModal.style.display = 'flex';
         }
+
         setTimeout(() => {
             if (this.cardTitle) this.cardTitle.focus();
         }, 100);
     }
 
     selectBlock(blockId) {
+        // Сохраняем текущий блок перед переключением
+        this.saveCurrentBlock();
+
         this.currentBlockId = blockId;
         const blockTypes = this.storage.getBlockTypes();
         const blockType = blockTypes.find(b => b.id === blockId);
@@ -966,6 +1053,31 @@ class DocxCardsApp {
         this.updatePreview();
     }
 
+    saveCurrentBlock() {
+        if (!this.currentBlockId || !this.blockContent || !this.blockEnabled) return;
+
+        const content = this.blockContent.innerHTML;
+        const enabled = this.blockEnabled.checked;
+        const blockTypes = this.storage.getBlockTypes();
+        const blockType = blockTypes.find(b => b.id === this.currentBlockId);
+
+        if (!blockType) return;
+
+        if (!this.currentCard.blocks[this.currentBlockId]) {
+            this.currentCard.blocks[this.currentBlockId] = {
+                title: blockType.title,
+                content: '',
+                enabled: false
+            };
+        }
+
+        this.currentCard.blocks[this.currentBlockId].content = content;
+        this.currentCard.blocks[this.currentBlockId].enabled = enabled;
+
+        // Обновляем статус блока в меню
+        this.updateBlocksStatus();
+    }
+
     updateBlocksStatus() {
         document.querySelectorAll('.block-item').forEach(item => {
             const blockId = item.dataset.blockId;
@@ -982,44 +1094,24 @@ class DocxCardsApp {
     updatePreview() {
         if (!this.currentBlockId || !this.previewContent) return;
 
-        const content = this.blockContent ? this.blockContent.innerHTML : '';
-        const blockTypes = this.storage.getBlockTypes();
-        const blockType = blockTypes.find(b => b.id === this.currentBlockId);
-
-        if (!blockType) return;
-
-        // Сохраняем содержимое в текущую карточку
-        if (!this.currentCard.blocks[this.currentBlockId]) {
-            this.currentCard.blocks[this.currentBlockId] = {
-                title: blockType.title,
-                content: '',
-                enabled: true
-            };
-        }
-
-        this.currentCard.blocks[this.currentBlockId].content = content;
-
-        // Обновляем статус
-        this.updateBlocksStatus();
+        this.saveCurrentBlock();
 
         // Формируем предпросмотр
         let previewHtml = '';
+        const blockTypes = this.storage.getBlockTypes();
 
         // Показываем только заполненные блоки
-        const blockTypesArray = this.storage.getBlockTypes();
-        Object.entries(this.currentCard.blocks).forEach(([blockId, block]) => {
-            if (block.enabled && block.content && block.content.trim().length > 0) {
-                const blockType = blockTypesArray.find(b => b.id === blockId);
-                if (blockType) {
-                    previewHtml += `
-                        <div class="preview-block">
-                            <h3>${blockType.title}</h3>
-                            <div class="block-content">
-                                ${block.content}
-                            </div>
+        blockTypes.forEach(blockType => {
+            const block = this.currentCard.blocks[blockType.id];
+            if (block && block.enabled && block.content && block.content.trim().length > 0) {
+                previewHtml += `
+                    <div class="preview-block">
+                        <h3>${blockType.title}</h3>
+                        <div class="block-content">
+                            ${block.content}
                         </div>
-                    `;
-                }
+                    </div>
+                `;
             }
         });
 
@@ -1029,22 +1121,7 @@ class DocxCardsApp {
     toggleBlock() {
         if (!this.currentBlockId) return;
 
-        const enabled = this.blockEnabled ? this.blockEnabled.checked : false;
-        const blockTypes = this.storage.getBlockTypes();
-        const blockType = blockTypes.find(b => b.id === this.currentBlockId);
-
-        if (!blockType) return;
-
-        if (!this.currentCard.blocks[this.currentBlockId]) {
-            this.currentCard.blocks[this.currentBlockId] = {
-                title: blockType.title,
-                content: '',
-                enabled: enabled
-            };
-        } else {
-            this.currentCard.blocks[this.currentBlockId].enabled = enabled;
-        }
-
+        this.saveCurrentBlock();
         this.updatePreview();
     }
 
@@ -1055,9 +1132,7 @@ class DocxCardsApp {
             if (this.blockContent) {
                 this.blockContent.innerHTML = '';
             }
-            if (this.currentCard.blocks[this.currentBlockId]) {
-                this.currentCard.blocks[this.currentBlockId].content = '';
-            }
+            this.saveCurrentBlock();
             this.updatePreview();
         }
     }
@@ -1078,6 +1153,7 @@ class DocxCardsApp {
                 if (this.blockContent) {
                     this.blockContent.focus();
                 }
+                this.saveCurrentBlock();
                 this.updatePreview();
             }
         } catch (error) {
@@ -1111,16 +1187,30 @@ class DocxCardsApp {
     async handleCardSubmit(event) {
         event.preventDefault();
 
-        if (!this.cardTitle || !this.cardCategory) return;
+        if (!this.cardTitle || !this.cardCategory) {
+            this.showNotification('Заполните обязательные поля', 'error');
+            return;
+        }
+
+        // Сохраняем текущий блок
+        this.saveCurrentBlock();
 
         // Собираем данные карточки
         const cardData = {
             title: this.cardTitle.value.trim(),
             category: this.cardCategory.value,
-            blocks: { ...this.currentCard.blocks },
+            blocks: this.currentCard.blocks,
             meta: {
-                cirillic: this.currentCard.meta?.cirillic || '',
-                base_description: this.currentCard.meta?.base_description || '',
+                // Новые поля
+                short_name: this.cardShortName ? this.cardShortName.value.trim() : '',
+                cirillic: this.cardCirillic ? this.cardCirillic.value.trim() : '',
+                base_description: this.cardBaseDescription ? this.cardBaseDescription.value.trim() : '',
+                slug: this.cardSlug ? this.cardSlug.value.trim() : '',
+                image: this.cardImage ? this.cardImage.value.trim() : '',
+                miasm: this.cardMiasm ? this.cardMiasm.value.trim() : '',
+                group: this.cardGroup ? this.cardGroup.value.trim() : '',
+
+                // Существующие поля
                 tags: this.cardTags ? this.cardTags.value.split(',').map(tag => tag.trim()).filter(tag => tag) : [],
                 author: this.cardAuthor ? this.cardAuthor.value.trim() : '',
                 source: this.cardSource ? this.cardSource.value.trim() : '',
@@ -1135,14 +1225,15 @@ class DocxCardsApp {
         }
 
         try {
+            let savedCard;
+
             if (this.currentCard.id && this.currentCard.id.startsWith('new_')) {
                 // Новая карточка
-                cardData.id = Date.now().toString();
-                await this.storage.addCard(cardData);
+                savedCard = await this.storage.addCard(cardData);
                 this.showNotification('Карточка создана');
             } else if (this.currentCard.id) {
                 // Обновление существующей карточки
-                await this.storage.updateCard(this.currentCard.id, cardData);
+                savedCard = await this.storage.updateCard(this.currentCard.id, cardData);
                 this.showNotification('Карточка обновлена');
             }
 
@@ -1151,12 +1242,13 @@ class DocxCardsApp {
             // Обновляем представление в зависимости от того, где мы находимся
             if (this.detailView && this.detailView.style.display !== 'none') {
                 // Мы в детальном просмотре, обновляем его
-                this.currentCard = cardData;
+                this.currentCard = savedCard || cardData;
                 this.renderCardDetail();
             } else {
                 // Мы в главном представлении
                 this.renderCards();
                 this.renderCategories();
+                this.renderFilters();
             }
         } catch (error) {
             this.showNotification('Ошибка при сохранении карточки', 'error');
@@ -1192,6 +1284,7 @@ class DocxCardsApp {
             } else {
                 this.renderCards();
                 this.renderCategories();
+                this.renderFilters();
             }
         } catch (error) {
             this.showNotification('Ошибка при удалении карточки', 'error');
@@ -1261,9 +1354,6 @@ class DocxCardsApp {
     openImportModal() {
         if (!this.importModal) return;
         this.importModal.style.display = 'flex';
-        if (this.importPreview) {
-            this.importPreview.style.display = 'none';
-        }
         if (this.dropZone) {
             this.dropZone.style.display = 'block';
         }
@@ -1321,105 +1411,65 @@ class DocxCardsApp {
             const filePath = file.path || file.name;
             const result = await window.electronAPI.readDocx(filePath);
 
-            if (this.importPreviewContent) {
-                this.importPreviewContent.innerHTML = result.html || result.value || 'Не удалось прочитать содержимое файла';
-            }
+            // Создаем новую карточку из импортируемого файла
+            const title = file.name.replace(/\.docx$/i, '').replace(/\.doc$/i, '');
 
-            if (this.dropZone) {
-                this.dropZone.style.display = 'none';
-            }
-            if (this.importPreview) {
-                this.importPreview.style.display = 'block';
-            }
-
-            // Сохраняем данные для импорта
-            this.importData = {
+            const newCard = this.storage.getEmptyCard();
+            newCard.title = title;
+            newCard.blocks.description = {
+                title: 'Описание',
                 content: result.html || result.value || '',
-                fileName: file.name
+                enabled: true
             };
+
+            // Открываем редактор для новой карточки
+            this.currentCard = newCard;
+            this.openEditor();
+
+            // Закрываем модальное окно импорта
+            this.closeImportModal();
         } catch (error) {
             this.showNotification('Ошибка при чтении файла', 'error');
             console.error('Import error:', error);
         }
     }
 
-    async confirmImport() {
-        if (!this.importData) return;
-
-        try {
-            const title = this.importData.fileName.replace(/\.docx$/i, '').replace(/\.doc$/i, '');
-
-            const newCard = this.storage.getEmptyCard();
-            newCard.title = title;
-            newCard.blocks.description = {
-                title: 'Описание',
-                content: this.importData.content,
-                enabled: true
-            };
-
-            await this.storage.addCard(newCard);
-
-            this.showNotification('Карточка импортирована');
-            this.closeImportModal();
-            this.renderCards();
-            this.renderCategories();
-        } catch (error) {
-            this.showNotification('Ошибка при импорте', 'error');
-            console.error('Import save error:', error);
-        }
-    }
-
     // ==================== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ====================
     showNotification(message, type = 'success') {
-        let notification = document.getElementById('successNotification');
-        let messageEl = document.getElementById('notificationMessage');
-
-        if (!notification || !messageEl) {
-            // Создаем уведомление если его нет
-            notification = document.createElement('div');
-            notification.className = `notification ${type}`;
-            notification.innerHTML = `
-                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
-                <span>${message}</span>
-            `;
-            notification.style.cssText = `
-                position: fixed;
-                bottom: 20px;
-                right: 20px;
-                background: white;
-                padding: 16px 24px;
-                border-radius: 8px;
-                box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                z-index: 1000;
-                transform: translateX(100%);
-                opacity: 0;
-                transition: all 0.3s ease;
-            `;
-
-            document.body.appendChild(notification);
-
-            setTimeout(() => {
-                notification.style.transform = 'translateX(0)';
-                notification.style.opacity = '1';
-            }, 10);
-
-            setTimeout(() => {
-                notification.style.transform = 'translateX(100%)';
-                notification.style.opacity = '0';
-                setTimeout(() => notification.remove(), 300);
-            }, 3000);
-            return;
-        }
-
-        messageEl.textContent = message;
+        const notification = document.createElement('div');
         notification.className = `notification ${type}`;
-        notification.classList.add('show');
+        notification.innerHTML = `
+            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+            <span>${message}</span>
+        `;
+        notification.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 1000;
+            transform: translateX(100%);
+            opacity: 0;
+            transition: all 0.3s ease;
+        `;
+
+        document.body.appendChild(notification);
 
         setTimeout(() => {
-            notification.classList.remove('show');
+            notification.style.transform = 'translateX(0)';
+            notification.style.opacity = '1';
+        }, 10);
+
+        setTimeout(() => {
+            notification.style.transform = 'translateX(100%)';
+            notification.style.opacity = '0';
+            setTimeout(() => notification.remove(), 300);
         }, 3000);
     }
 
@@ -1501,11 +1551,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Инициализируем приложение
     window.app = new DocxCardsApp();
-
-    // Для отладки: глобальная функция для открытия DevTools
-    window.openDevTools = () => {
-        if (window.electronAPI && window.electronAPI.openDevTools) {
-            window.electronAPI.openDevTools();
-        }
-    };
 });

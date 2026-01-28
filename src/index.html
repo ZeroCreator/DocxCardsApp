@@ -29,13 +29,17 @@
                 </div>
 
                 <div class="menu-section">
-                    <h3><i class="fas fa-tags"></i> Категории</h3>
-                    <div class="categories-list" id="categoriesList">
-                        <!-- Категории будут загружены динамически -->
+                    <h3><i class="fas fa-filter"></i> Фильтр по миазмам</h3>
+                    <div class="filter-list" id="miasmsFilter">
+                        <!-- Миазмы будут загружены динамически -->
                     </div>
-                    <button class="btn-add-category" id="addCategoryBtn">
-                        <i class="fas fa-plus"></i> Добавить категорию
-                    </button>
+                </div>
+
+                <div class="menu-section">
+                    <h3><i class="fas fa-filter"></i> Фильтр по группам</h3>
+                    <div class="filter-list" id="groupsFilter">
+                        <!-- Группы будут загружены динамически -->
+                    </div>
                 </div>
 
                 <div class="menu-section">
@@ -150,12 +154,40 @@
                         <div class="menu-section">
                             <h3><i class="fas fa-info-circle"></i> Основное</h3>
                             <div class="form-group">
-                                <label for="cardTitle">Название карточки</label>
-                                <input type="text" id="cardTitle" placeholder="Введите название" required>
+                                <label for="cardTitle">Название карточки (латиница)*</label>
+                                <input type="text" id="cardTitle" placeholder="Например: Arnica Montana" required>
                             </div>
                             <div class="form-group">
-                                <label for="cardCategory">Категория</label>
-                                <select id="cardCategory">
+                                <label for="cardShortName">Короткое название</label>
+                                <input type="text" id="cardShortName" placeholder="Например: arn.">
+                            </div>
+                            <div class="form-group">
+                                <label for="cardCirillic">Кириллическое название</label>
+                                <input type="text" id="cardCirillic" placeholder="Например: Арника">
+                            </div>
+                            <div class="form-group">
+                                <label for="cardBaseDescription">Базовое описание</label>
+                                <textarea id="cardBaseDescription" rows="2" placeholder="Например: Арника горная, баранник горный. Семейство сложноцветные"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label for="cardSlug">Слаг (URL)</label>
+                                <input type="text" id="cardSlug" placeholder="Например: arnica">
+                            </div>
+                            <div class="form-group">
+                                <label for="cardImage">Изображение</label>
+                                <input type="text" id="cardImage" placeholder="Например: arnica.webp">
+                            </div>
+                            <div class="form-group">
+                                <label for="cardMiasm">Миазмы (через запятую)</label>
+                                <input type="text" id="cardMiasm" placeholder="Например: Псора, Сикоз">
+                            </div>
+                            <div class="form-group">
+                                <label for="cardGroup">Группы (через запятую)</label>
+                                <input type="text" id="cardGroup" placeholder="Например: Растения">
+                            </div>
+                            <div class="form-group">
+                                <label for="cardCategory">Категория*</label>
+                                <select id="cardCategory" required>
                                     <!-- Заполнится динамически -->
                                 </select>
                             </div>
@@ -290,8 +322,6 @@
                     </button>
                     <input type="file" id="fileInput" accept=".docx,.doc" style="display: none;">
                 </div>
-
-
             </div>
         </div>
     </div>
